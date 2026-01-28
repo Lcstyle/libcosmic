@@ -574,6 +574,25 @@ where
         state.buttons_offset < self.model.order.len() - state.buttons_visible
     }
 
+    /// Adjusts buttons_offset to ensure the given entity is visible.
+    fn ensure_visible(&self, state: &mut LocalState, entity: Entity) {
+        let Some(index) = self.model.order.iter().position(|&e| e == entity) else {
+            return;
+        };
+
+        let visible = state.buttons_visible.max(1);
+        let len = self.model.order.len();
+        let max_offset = len.saturating_sub(visible);
+
+        if index < state.buttons_offset {
+            state.buttons_offset = index;
+        } else if index >= state.buttons_offset + visible {
+            state.buttons_offset = (index + 1).saturating_sub(visible);
+        }
+
+        state.buttons_offset = state.buttons_offset.min(max_offset);
+    }
+
     pub(super) fn button_dimensions(
         &self,
         state: &mut LocalState,
@@ -1186,6 +1205,22 @@ where
                     if let Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
                     | Event::Touch(touch::Event::FingerLifted { .. }) = event
                     {
+                        // When scrollable_focus is enabled, also switch to previous tab
+                        if self.scrollable_focus {
+                            if let Some(on_activate) = self.on_activate.as_ref() {
+                                let mut prev_key = Entity::null();
+                                for key in self.model.order.iter().copied() {
+                                    if self.model.is_active(key) && !prev_key.is_null() {
+                                        shell.publish(on_activate(prev_key));
+                                        self.ensure_visible(state, prev_key);
+                                        return event::Status::Captured;
+                                    }
+                                    if self.model.is_enabled(key) {
+                                        prev_key = key;
+                                    }
+                                }
+                            }
+                        }
                         state.buttons_offset -= 1;
                     }
                 } else {
@@ -1201,6 +1236,22 @@ where
                         if let Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
                         | Event::Touch(touch::Event::FingerLifted { .. }) = event
                         {
+                            // When scrollable_focus is enabled, also switch to next tab
+                            if self.scrollable_focus {
+                                if let Some(on_activate) = self.on_activate.as_ref() {
+                                    let mut found_active = false;
+                                    for key in self.model.order.iter().copied() {
+                                        if found_active && self.model.is_enabled(key) {
+                                            shell.publish(on_activate(key));
+                                            self.ensure_visible(state, key);
+                                            return event::Status::Captured;
+                                        }
+                                        if self.model.is_active(key) {
+                                            found_active = true;
+                                        }
+                                    }
+                                }
+                            }
                             state.buttons_offset += 1;
                         }
                     }
@@ -1392,6 +1443,7 @@ where
                                         shell.publish(on_activate(key));
                                         state.set_focused();
                                         state.focused_item = Item::Tab(key);
+                                        self.ensure_visible(state, key);
                                         return event::Status::Captured;
                                     }
                                 }
