@@ -62,9 +62,37 @@ where
                 width_offset = f32::from(self.button_height) * 2.0;
             }
 
-            homogenous_width = ((num as f32).mul_add(-spacing, bounds.width - width_offset)
-                + spacing)
-                / num as f32;
+            let available_width = bounds.width - width_offset;
+            let total_spacing = spacing * (num.saturating_sub(1)) as f32;
+
+            // Sum up widths of all active tabs among visible tabs
+            let mut active_widths_sum = 0.0f32;
+            let mut active_count = 0usize;
+            for (nth, key) in self
+                .model
+                .order
+                .iter()
+                .copied()
+                .enumerate()
+                .skip(state.buttons_offset)
+                .take(state.buttons_visible)
+            {
+                if self.model.is_active(key) {
+                    active_widths_sum += state.internal_layout[nth].0.width;
+                    active_count += 1;
+                }
+            }
+
+            let inactive_count = num.saturating_sub(active_count);
+            if inactive_count > 0 && active_count > 0 {
+                // Distribute remaining space among inactive tabs
+                let available_for_inactive = available_width - active_widths_sum - total_spacing;
+                homogenous_width = (available_for_inactive / inactive_count as f32).max(0.0);
+            } else {
+                // All tabs active or no active tabs: use uniform distribution
+                homogenous_width =
+                    ((available_width - total_spacing) / num as f32).max(0.0);
+            }
         }
 
         let is_control = matches!(self.style, crate::theme::SegmentedButton::Control);
