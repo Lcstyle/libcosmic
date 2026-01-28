@@ -684,9 +684,11 @@ where
             width += f32::from(self.close_icon.size) + f32::from(self.button_spacing);
         }
 
-        // Add button padding to the max size found
         width += f32::from(self.button_padding[0]) + f32::from(self.button_padding[2]);
-        width = width.min(f32::from(self.maximum_button_width));
+
+        if !self.model.is_active(button) {
+            width = width.min(f32::from(self.maximum_button_width));
+        }
 
         (width, f32::from(self.button_height))
     }
