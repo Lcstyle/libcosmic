@@ -668,8 +668,8 @@ where
             width += f32::from(self.close_icon.size) + f32::from(self.button_spacing);
         }
 
-        // Add button padding to the max size found
         width += f32::from(self.button_padding[0]) + f32::from(self.button_padding[2]);
+
         let max_w = if self.model.is_active(button) {
             f32::from(self.maximum_active_button_width)
         } else {

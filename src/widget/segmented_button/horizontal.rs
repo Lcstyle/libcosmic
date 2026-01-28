@@ -83,8 +83,11 @@ where
                     let mut layout_bounds = bounds;
 
                     let layout_size = &state.internal_layout[nth].0;
+                    let is_active = self.model.is_active(key);
 
                     if !state.collapsed && Length::Shrink == self.width {
+                        layout_bounds.width = layout_size.width;
+                    } else if is_active {
                         layout_bounds.width = layout_size.width;
                     } else {
                         layout_bounds.width = homogenous_width;
