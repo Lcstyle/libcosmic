@@ -71,6 +71,9 @@ pub struct Model<SelectionMode: Default> {
     /// Text optionally-defined for each item.
     pub(super) text: SecondaryMap<Entity, Cow<'static, str>>,
 
+    /// Tooltip optionally-defined for each item.
+    pub(super) tooltips: SecondaryMap<Entity, Cow<'static, str>>,
+
     /// Order which the items will be displayed.
     pub(super) order: VecDeque<Entity>,
 
@@ -498,6 +501,31 @@ where
     #[inline]
     pub fn text_remove(&mut self, id: Entity) -> Option<Cow<'static, str>> {
         self.text.remove(id)
+    }
+
+    /// Immutable reference to the tooltip assigned to the item.
+    #[inline]
+    pub fn tooltip(&self, id: Entity) -> Option<&str> {
+        self.tooltips.get(id).map(Cow::as_ref)
+    }
+
+    /// Sets a new tooltip for an item.
+    pub fn tooltip_set(
+        &mut self,
+        id: Entity,
+        tooltip: impl Into<Cow<'static, str>>,
+    ) -> Option<Cow<'_, str>> {
+        if !self.contains_item(id) {
+            return None;
+        }
+
+        self.tooltips.insert(id, tooltip.into())
+    }
+
+    /// Removes the tooltip from an item.
+    #[inline]
+    pub fn tooltip_remove(&mut self, id: Entity) -> Option<Cow<'static, str>> {
+        self.tooltips.remove(id)
     }
 }
 
