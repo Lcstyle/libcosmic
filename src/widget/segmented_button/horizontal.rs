@@ -83,15 +83,17 @@ where
                 }
             }
 
+            let max_w = f32::from(self.maximum_button_width);
             let inactive_count = num.saturating_sub(active_count);
             if inactive_count > 0 && active_count > 0 {
-                // Distribute remaining space among inactive tabs
+                // Distribute remaining space among inactive tabs, capped at max width
                 let available_for_inactive = available_width - active_widths_sum - total_spacing;
-                homogenous_width = (available_for_inactive / inactive_count as f32).max(0.0);
+                homogenous_width =
+                    (available_for_inactive / inactive_count as f32).clamp(0.0, max_w);
             } else {
                 // All tabs active or no active tabs: use uniform distribution
                 homogenous_width =
-                    ((available_width - total_spacing) / num as f32).max(0.0);
+                    ((available_width - total_spacing) / num as f32).clamp(0.0, max_w);
             }
         }
 
