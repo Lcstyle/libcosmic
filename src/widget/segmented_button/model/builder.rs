@@ -143,6 +143,13 @@ where
         self
     }
 
+    /// Defines the tooltip for the item.
+    #[allow(clippy::must_use_candidate, clippy::return_self_not_must_use)]
+    pub fn tooltip(mut self, tooltip: impl Into<Cow<'static, str>>) -> Self {
+        self.model.0.tooltip_set(self.id, tooltip);
+        self
+    }
+
     /// Calls a function with the ID
     #[allow(clippy::must_use_candidate, clippy::return_self_not_must_use)]
     pub fn with_id(self, func: impl FnOnce(Entity)) -> Self {
