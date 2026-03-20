@@ -994,7 +994,10 @@ impl pane_grid::Catalog for Theme {
                 color: theme.accent.hover.into(),
                 width: 2.0,
             },
-            split_line: None,
+            split_line: Some(pane_grid::Line {
+                color: theme.bg_divider().into(),
+                width: 1.0,
+            }),
         }
     }
 }
