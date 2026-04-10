@@ -83,7 +83,6 @@ tokio = [
 wayland = [
     "ashpd?/wayland",
     "autosize",
-    "iced_runtime/wayland",
     "iced/wayland",
     "iced_winit/wayland",
     "cctk",
