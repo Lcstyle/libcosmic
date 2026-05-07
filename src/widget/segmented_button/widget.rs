@@ -1316,7 +1316,8 @@ where
                                     if self.model.is_active(key) && !prev_key.is_null() {
                                         shell.publish(on_activate(prev_key));
                                         self.ensure_visible(state, prev_key);
-                                        return event::Status::Captured;
+                                        shell.capture_event();
+                                        return;
                                     }
                                     if self.model.is_enabled(key) {
                                         prev_key = key;
@@ -1347,7 +1348,8 @@ where
                                         if found_active && self.model.is_enabled(key) {
                                             shell.publish(on_activate(key));
                                             self.ensure_visible(state, key);
-                                            return event::Status::Captured;
+                                            shell.capture_event();
+                                            return;
                                         }
                                         if self.model.is_active(key) {
                                             found_active = true;
@@ -2623,6 +2625,7 @@ impl<Message> iced_core::overlay::Overlay<Message, crate::Theme, Renderer> for T
                     color: Color::from(cosmic.palette.neutral_4),
                 },
                 shadow: Shadow::default(),
+                snap: true,
             },
             Background::Color(Color::from(bg_color)),
         );
@@ -2642,8 +2645,8 @@ impl<Message> iced_core::overlay::Overlay<Message, crate::Theme, Renderer> for T
                 size: iced::Pixels(12.0),
                 bounds: Size::new(text_bounds.width, text_bounds.height),
                 font: crate::font::default(),
-                horizontal_alignment: alignment::Horizontal::Left,
-                vertical_alignment: alignment::Vertical::Center,
+                align_x: text::Alignment::Left,
+                align_y: alignment::Vertical::Center,
                 shaping: Shaping::Advanced,
                 wrapping: Wrapping::None,
                 ellipsize: Ellipsize::None,
@@ -2653,10 +2656,6 @@ impl<Message> iced_core::overlay::Overlay<Message, crate::Theme, Renderer> for T
             Color::from(text_color),
             text_bounds,
         );
-    }
-
-    fn is_over(&self, _layout: Layout<'_>, _renderer: &Renderer, _cursor_position: Point) -> bool {
-        false
     }
 }
 
