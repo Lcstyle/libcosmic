@@ -62,9 +62,11 @@ where
                 width_offset = f32::from(self.button_height) * 2.0;
             }
 
-            homogenous_width = ((num as f32).mul_add(-spacing, bounds.width - width_offset)
+            let max_w = f32::from(self.maximum_button_width);
+            homogenous_width = (((num as f32).mul_add(-spacing, bounds.width - width_offset)
                 + spacing)
-                / num as f32;
+                / num as f32)
+                .clamp(0.0, max_w);
         }
 
         let is_control = matches!(self.style, crate::theme::SegmentedButton::Control);

@@ -138,6 +138,8 @@ where
     pub(super) button_spacing: u16,
     /// Maximum width of a button.
     pub(super) maximum_button_width: u16,
+    /// Maximum width of the active button.
+    pub(super) maximum_active_button_width: u16,
     /// Minimum width of a button.
     pub(super) minimum_button_width: u16,
     /// Spacing for each indent.
@@ -192,6 +194,8 @@ where
     #[setters(skip)]
     pub(super) on_reorder: Option<Box<dyn Fn(ReorderEvent) -> Message + 'static>>,
     #[setters(skip)]
+    pub(super) on_empty_double_click: Option<Box<dyn Fn() -> Message + 'a>>,
+    #[setters(skip)]
     /// Defines the implementation of this struct
     variant: PhantomData<Variant>,
 }
@@ -218,6 +222,7 @@ where
             button_spacing: 0,
             minimum_button_width: u16::MIN,
             maximum_button_width: u16::MAX,
+            maximum_active_button_width: u16::MAX,
             indent_spacing: 16,
             font_active: crate::font::semibold(),
             font_hovered: crate::font::default(),
@@ -243,6 +248,7 @@ where
             tab_drag: None,
             on_drop_hint: None,
             on_reorder: None,
+            on_empty_double_click: None,
         }
     }
 
@@ -374,6 +380,12 @@ where
     /// Emit a message when a tab drag is dropped inside this widget.
     pub fn on_reorder(mut self, callback: impl Fn(ReorderEvent) -> Message + 'static) -> Self {
         self.on_reorder = Some(Box::new(callback));
+        self
+    }
+
+    /// Emits a message when the empty area of the tab bar is double-clicked.
+    pub fn on_empty_double_click(mut self, callback: impl Fn() -> Message + 'a) -> Self {
+        self.on_empty_double_click = Some(Box::new(callback));
         self
     }
 
@@ -658,7 +670,12 @@ where
 
         // Add button padding to the max size found
         width += f32::from(self.button_padding[0]) + f32::from(self.button_padding[2]);
-        width = width.min(f32::from(self.maximum_button_width));
+        let max_w = if self.model.is_active(button) {
+            f32::from(self.maximum_active_button_width)
+        } else {
+            f32::from(self.maximum_button_width)
+        };
+        width = width.min(max_w);
 
         (width, f32::from(self.button_height))
     }
@@ -925,6 +942,9 @@ where
             dragging_tab: None,
             drop_hint: None,
             offer_mimes: Vec::new(),
+            last_empty_click: None,
+            hover_start: None,
+            hover_bounds: None,
         })
     }
 
@@ -1225,6 +1245,8 @@ where
                         if let Some(event) = pending_reorder {
                             state.focused_item = Item::Tab(event.dragged);
                             state.hovered = Item::None;
+                            state.hover_start = None;
+                            state.hover_bounds = None;
                             for key in self.model.order.iter().copied() {
                                 self.update_entity_paragraph(state, key);
                             }
@@ -1303,6 +1325,8 @@ where
                         // Record that the mouse is hovering over this button.
                         if state.hovered != Item::Tab(key) {
                             state.hovered = Item::Tab(key);
+                            state.hover_start = Some((Instant::now(), key));
+                            state.hover_bounds = Some(bounds);
                             for key in self.model.order.iter().copied() {
                                 self.update_entity_paragraph(state, key);
                             }
@@ -1426,8 +1450,29 @@ where
                     break;
                 } else if state.hovered == Item::Tab(key) {
                     state.hovered = Item::None;
+                    state.hover_start = None;
+                    state.hover_bounds = None;
                     self.update_entity_paragraph(state, key);
                 }
+            }
+
+            // Detect double-click on empty tab bar space (not on any button).
+            if let Some(on_empty_dbl) = self.on_empty_double_click.as_ref()
+                && let Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event
+                && !matches!(state.hovered, Item::Tab(_))
+            {
+                let now = Instant::now();
+                let pos = cursor_position.position().unwrap_or_default();
+                if let Some((prev_time, prev_pos)) = state.last_empty_click
+                    && now.duration_since(prev_time) < Duration::from_millis(400)
+                    && pos.distance(prev_pos) < 10.0
+                {
+                    state.last_empty_click = None;
+                    shell.publish(on_empty_dbl());
+                    shell.capture_event();
+                    return;
+                }
+                state.last_empty_click = Some((now, pos));
             }
 
             if self.scrollable_focus
@@ -1486,6 +1531,8 @@ where
             }
         } else {
             if let Item::Tab(_key) = std::mem::replace(&mut state.hovered, Item::None) {
+                state.hover_start = None;
+                state.hover_bounds = None;
                 for key in self.model.order.iter().copied() {
                     self.update_entity_paragraph(state, key);
                 }
@@ -1592,6 +1639,16 @@ where
 
                 shell.capture_event();
             }
+        }
+
+        // Request a redraw when the tooltip delay expires
+        if let Some((start, entity)) = state.hover_start
+            && start.elapsed() < Duration::from_millis(500)
+            && self.model.tooltip(entity).is_some()
+        {
+            shell.request_redraw_at(window::RedrawRequest::At(
+                start + Duration::from_millis(500),
+            ));
         }
     }
 
@@ -2149,57 +2206,78 @@ where
         let state = tree.state.downcast_mut::<LocalState>();
         let menu_state = state.menu_state.clone();
 
-        let entity = state.show_context?;
+        // Context menu overlay
+        if let Some(entity) = state.show_context {
+            let found_bounds: Option<Rectangle> =
+                self.variant_bounds(state, layout.bounds())
+                    .find_map(|item| match item {
+                        ItemBounds::Button(e, bounds) if e == entity => Some(bounds),
+                        _ => None,
+                    });
+            if let Some(mut bounds) = found_bounds {
+                if let Some(context_menu) = self.context_menu.as_mut() {
+                    if menu_state.inner.with_data(|data| data.open) {
+                        bounds.x = state.context_cursor.x;
+                        bounds.y = state.context_cursor.y;
 
-        let mut bounds =
-            self.variant_bounds(state, layout.bounds())
-                .find_map(|item| match item {
-                    ItemBounds::Button(e, bounds) if e == entity => Some(bounds),
-                    _ => None,
-                })?;
-
-        let context_menu = self.context_menu.as_mut()?;
-
-        if !menu_state.inner.with_data(|data| data.open) {
-            // If the menu is not open, we don't need to show it.
-            // We also clear the context entity and update the text
-            // cache so that the item is not bold when the context menu is closed
-            state.show_context = None;
-            for key in self.model.order.iter().copied() {
-                self.update_entity_paragraph(state, key);
+                        return Some(
+                            crate::widget::menu::Menu {
+                                tree: menu_state,
+                                menu_roots: std::borrow::Cow::Owned(context_menu.clone()),
+                                bounds_expand: 16,
+                                menu_overlays_parent: true,
+                                close_condition: CloseCondition {
+                                    leave: false,
+                                    click_outside: true,
+                                    click_inside: true,
+                                },
+                                item_width: ItemWidth::Uniform(240),
+                                item_height: ItemHeight::Dynamic(40),
+                                bar_bounds: bounds,
+                                main_offset: -bounds.height as i32,
+                                cross_offset: 0,
+                                root_bounds_list: vec![bounds],
+                                path_highlight: Some(PathHighlight::MenuActive),
+                                style: std::borrow::Cow::Borrowed(&crate::theme::menu_bar::MenuBarStyle::Default),
+                                position: Point::new(translation.x, translation.y),
+                                is_overlay: true,
+                                window_id: window::Id::NONE,
+                                depth: 0,
+                                on_surface_action: None,
+                            }
+                            .overlay(),
+                        );
+                    } else {
+                        // Menu closed — clear context entity and update text cache
+                        // so that the item is not bold when context menu is closed
+                        state.show_context = None;
+                        for key in self.model.order.iter().copied() {
+                            self.update_entity_paragraph(state, key);
+                        }
+                    }
+                }
             }
-            return None;
         }
-        bounds.x = state.context_cursor.x;
-        bounds.y = state.context_cursor.y;
 
-        Some(
-            crate::widget::menu::Menu {
-                tree: menu_state,
-                menu_roots: std::borrow::Cow::Owned(context_menu.clone()),
-                bounds_expand: 16,
-                menu_overlays_parent: true,
-                close_condition: CloseCondition {
-                    leave: false,
-                    click_outside: true,
-                    click_inside: true,
-                },
-                item_width: ItemWidth::Uniform(240),
-                item_height: ItemHeight::Dynamic(40),
-                bar_bounds: bounds,
-                main_offset: -bounds.height as i32,
-                cross_offset: 0,
-                root_bounds_list: vec![bounds],
-                path_highlight: Some(PathHighlight::MenuActive),
-                style: std::borrow::Cow::Borrowed(&crate::theme::menu_bar::MenuBarStyle::Default),
-                position: Point::new(translation.x, translation.y),
-                is_overlay: true,
-                window_id: window::Id::NONE,
-                depth: 0,
-                on_surface_action: None,
+        // Tooltip overlay
+        if let Some((start, entity)) = state.hover_start {
+            if start.elapsed() >= Duration::from_millis(500) {
+                if let Some(tooltip_text) = self.model.tooltip(entity) {
+                    if let Some(tab_bounds) = state.hover_bounds {
+                        let tooltip_text = tooltip_text.to_owned();
+                        return Some(
+                            iced_core::overlay::Element::new(Box::new(TooltipOverlay {
+                                text: tooltip_text,
+                                tab_bounds,
+                                translation,
+                            })),
+                        );
+                    }
+                }
             }
-            .overlay(),
-        )
+        }
+
+        None
     }
 
     fn drag_destinations(
@@ -2419,6 +2497,12 @@ pub struct LocalState {
     dragging_tab: Option<Entity>,
     /// Current drop hint for drag-and-drop indicator
     drop_hint: Option<DropHint>,
+    /// Timestamp and position of the last click on empty tab bar space (for double-click detection).
+    last_empty_click: Option<(Instant, Point)>,
+    /// Tracks when hover started on a tab and which entity, for tooltip delay.
+    hover_start: Option<(Instant, Entity)>,
+    /// Cached bounds of the hovered tab for tooltip positioning.
+    hover_bounds: Option<Rectangle>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -2440,6 +2524,88 @@ impl LocalState {
             updated_at: now,
             now,
         });
+    }
+}
+
+struct TooltipOverlay {
+    text: String,
+    tab_bounds: Rectangle,
+    translation: Vector,
+}
+
+impl<Message> iced_core::overlay::Overlay<Message, crate::Theme, Renderer> for TooltipOverlay {
+    fn layout(&mut self, _renderer: &Renderer, bounds: Size) -> layout::Node {
+        // Estimate tooltip size: ~8px per char width, 20px height, plus padding
+        let padding = 8.0;
+        let text_width = (self.text.len() as f32 * 7.5).min(600.0);
+        let width = text_width + padding * 2.0;
+        let height = 24.0 + padding;
+
+        // Position above the tab
+        let x = (self.tab_bounds.x + self.tab_bounds.width / 2.0 - width / 2.0)
+            .max(0.0)
+            .min(bounds.width - width);
+        let y = (self.tab_bounds.y - height - 4.0).max(0.0);
+
+        let mut node = layout::Node::new(Size::new(width, height));
+        node = node.move_to(Point::new(x - self.translation.x, y - self.translation.y));
+        node
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut Renderer,
+        theme: &crate::Theme,
+        _style: &renderer::Style,
+        layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+    ) {
+        let bounds = layout.bounds();
+        let cosmic = theme.cosmic();
+        let bg_color = cosmic.palette.neutral_2;
+        let text_color = cosmic.palette.neutral_9;
+
+        // Draw background
+        renderer.fill_quad(
+            renderer::Quad {
+                bounds,
+                border: Border {
+                    radius: [4.0; 4].into(),
+                    width: 1.0,
+                    color: Color::from(cosmic.palette.neutral_4),
+                },
+                shadow: Shadow::default(),
+                snap: true,
+            },
+            Background::Color(Color::from(bg_color)),
+        );
+
+        // Draw text
+        let padding = 8.0;
+        let text_bounds = Rectangle {
+            x: bounds.x + padding,
+            y: bounds.y,
+            width: bounds.width - padding * 2.0,
+            height: bounds.height,
+        };
+
+        renderer.fill_text(
+            Text {
+                content: self.text.clone(),
+                size: iced::Pixels(12.0),
+                bounds: Size::new(text_bounds.width, text_bounds.height),
+                font: crate::font::default(),
+                align_x: text::Alignment::Left,
+                align_y: alignment::Vertical::Center,
+                shaping: Shaping::Advanced,
+                wrapping: Wrapping::None,
+                ellipsize: Ellipsize::None,
+                line_height: LineHeight::default(),
+            },
+            Point::new(text_bounds.x, text_bounds.center_y()),
+            Color::from(text_color),
+            text_bounds,
+        );
     }
 }
 
@@ -2547,6 +2713,7 @@ mod tests {
             dragging_tab: Some(dragging),
             drop_hint: None,
             offer_mimes: Vec::new(),
+            last_empty_click: None,
         };
         state.buttons_visible = len;
         state.known_length = len;
