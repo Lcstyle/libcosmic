@@ -1318,7 +1318,8 @@ where
                                     if self.model.is_active(key) && !prev_key.is_null() {
                                         shell.publish(on_activate(prev_key));
                                         self.ensure_visible(state, prev_key);
-                                        return event::Status::Captured;
+                                        shell.capture_event();
+                                        return;
                                     }
                                     if self.model.is_enabled(key) {
                                         prev_key = key;
@@ -1349,7 +1350,8 @@ where
                                         if found_active && self.model.is_enabled(key) {
                                             shell.publish(on_activate(key));
                                             self.ensure_visible(state, key);
-                                            return event::Status::Captured;
+                                            shell.capture_event();
+                                            return;
                                         }
                                         if self.model.is_active(key) {
                                             found_active = true;
