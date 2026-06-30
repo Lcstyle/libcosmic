@@ -213,6 +213,16 @@ where
             .and_then(|storage| storage.remove(id));
     }
 
+    /// Removes the data of the given type from the item and returns ownership of it.
+    pub fn data_take<Data: 'static>(&mut self, id: Entity) -> Option<Data> {
+        self.storage
+            .0
+            .get_mut(&TypeId::of::<Data>())
+            .and_then(|storage| storage.remove(id))
+            .and_then(|boxed| boxed.downcast::<Data>().ok())
+            .map(|boxed| *boxed)
+    }
+
     #[inline]
     pub fn divider_above(&self, id: Entity) -> Option<bool> {
         self.divider_aboves.get(id).copied()
