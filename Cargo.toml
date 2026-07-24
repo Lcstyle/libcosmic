@@ -301,3 +301,7 @@ iced_winit         = { path = "iced/winit" }
 
 [patch."https://github.com/pop-os/cosmic-text"]
 cosmic-text = { path = "../cosmic-text" }
+
+# iced pulls cosmic-text 0.19 from crates.io, not github — patch that too.
+[patch.crates-io]
+cosmic-text = { path = "../cosmic-text" }
