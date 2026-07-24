@@ -264,3 +264,40 @@ edition = "2024"
 
 [build-dependencies]
 build_helpers = { path = "./iced/build_helpers" }
+
+# Unify resolution of libcosmic / iced / cosmic-text across the workspace and
+# every transitive dependency. Without these, cargo pulls a second copy of
+# each crate from the pop-os git URLs referenced by cosmic-panel etc., which
+# collides with our local fork paths (two iced_graphics, ambiguous specs,
+# Direction API mismatch). These patches redirect all git-URL references to
+# our LOCAL fork checkouts — which ARE our forks with all customizations.
+
+[patch."https://github.com/pop-os/libcosmic"]
+cosmic-config        = { path = "cosmic-config" }
+cosmic-config-derive = { path = "cosmic-config-derive" }
+cosmic-theme         = { path = "cosmic-theme" }
+libcosmic            = { path = "." }
+
+[patch."https://github.com/pop-os/iced"]
+iced               = { path = "iced" }
+iced_accessibility = { path = "iced/accessibility" }
+iced_beacon        = { path = "iced/beacon" }
+iced_core          = { path = "iced/core" }
+iced_debug         = { path = "iced/debug" }
+iced_devtools      = { path = "iced/devtools" }
+iced_futures       = { path = "iced/futures" }
+iced_graphics      = { path = "iced/graphics" }
+iced_highlighter   = { path = "iced/highlighter" }
+iced_program       = { path = "iced/program" }
+iced_renderer      = { path = "iced/renderer" }
+iced_runtime       = { path = "iced/runtime" }
+iced_selector      = { path = "iced/selector" }
+iced_test          = { path = "iced/test" }
+iced_tester        = { path = "iced/tester" }
+iced_tiny_skia     = { path = "iced/tiny_skia" }
+iced_wgpu          = { path = "iced/wgpu" }
+iced_widget        = { path = "iced/widget" }
+iced_winit         = { path = "iced/winit" }
+
+[patch."https://github.com/pop-os/cosmic-text"]
+cosmic-text = { path = "../cosmic-text" }
