@@ -528,12 +528,68 @@ impl Context {
     }
 }
 
+/// Point stderr (and stdout) at the journald stream socket when they are
+/// pipes, i.e. when this process was spawned by cosmic-panel.
+///
+/// The panel holds the read end of its applets' stdio pipes and is also their
+/// embedded Wayland server, so both die in the same instant the panel does.
+/// The first crate to log the dead Wayland connection does so through a print
+/// macro (wayland-backend aliases `log_error!` to `eprintln!` without its
+/// `log` feature); std panics when that write fails ("failed printing to
+/// stderr"), and the panic escalates to abort() under both panic profiles —
+/// `panic = "abort"` directly, unwinding builds via a destructor panic during
+/// cleanup (`panic_in_cleanup`). One SIGABRT + coredump per applet, per panel
+/// death. A journald-backed fd survives the panel: the disconnect log then
+/// succeeds and the applet exits through the normal error paths instead.
+/// See <https://github.com/pop-os/cosmic-panel/issues/655>.
+fn stdio_to_journal() {
+    use std::io::Write;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::{fs::FileTypeExt, net::UnixStream};
+
+    unsafe extern "C" {
+        safe fn dup2(oldfd: core::ffi::c_int, newfd: core::ffi::c_int) -> core::ffi::c_int;
+    }
+
+    let is_pipe = |fd: i32| {
+        std::fs::metadata(format!("/proc/self/fd/{fd}"))
+            .map(|m| m.file_type().is_fifo())
+            .unwrap_or(false)
+    };
+    // A tty/file/socket stderr (terminal run, systemd service) is left alone.
+    if !is_pipe(2) {
+        return;
+    }
+    let Ok(mut sock) = UnixStream::connect("/run/systemd/journal/stdout") else {
+        return; // not a systemd system; keep the pipe
+    };
+    let ident = std::env::args()
+        .next()
+        .and_then(|a| a.rsplit('/').next().map(str::to_owned))
+        .unwrap_or_else(|| String::from("cosmic-applet"));
+    // Stream header fields: identifier, unit (empty), priority, level_prefix,
+    // forward_to_syslog, forward_to_kmsg, forward_to_console.
+    if sock
+        .write_all(format!("{ident}\n\n6\n0\n0\n0\n0\n").as_bytes())
+        .is_err()
+    {
+        return;
+    }
+    dup2(sock.as_raw_fd(), 2);
+    if is_pipe(1) {
+        dup2(sock.as_raw_fd(), 1);
+    }
+    drop(sock);
+}
+
 /// Launch the application with the given settings.
 ///
 /// # Errors
 ///
 /// Returns error on application failure.
 pub fn run<App: Application>(flags: App::Flags) -> iced::Result {
+    stdio_to_journal();
+
     let helper = Context::default();
 
     let mut settings = helper.window_settings();
