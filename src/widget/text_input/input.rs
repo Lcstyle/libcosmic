@@ -622,8 +622,7 @@ where
             .value
             .raw()
             .buffer()
-            .lines
-            .iter()
+            .lines_iter()
             .map(|l| l.text())
             .collect::<String>();
         if state.is_secure != self.is_secure
@@ -632,8 +631,7 @@ where
                 .label
                 .raw()
                 .buffer()
-                .lines
-                .iter()
+                .lines_iter()
                 .map(|l| l.text())
                 .collect::<String>()
                 != self.label.as_deref().unwrap_or_default()
@@ -641,8 +639,7 @@ where
                 .helper_text
                 .raw()
                 .buffer()
-                .lines
-                .iter()
+                .lines_iter()
                 .map(|l| l.text())
                 .collect::<String>()
                 != self.helper_text.as_deref().unwrap_or_default()
