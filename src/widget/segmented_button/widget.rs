@@ -1282,6 +1282,8 @@ where
         let my_bounds = layout.bounds();
         let state = tree.state.downcast_mut::<LocalState>();
 
+        let hovered_before = state.hovered;
+
         let my_id = self.get_drag_id();
 
         if let Event::Dnd(e) = &mut event {
@@ -2025,6 +2027,10 @@ where
             shell.request_redraw_at(window::RedrawRequest::At(
                 start + Duration::from_millis(500),
             ));
+        }
+
+        if hovered_before != state.hovered {
+            shell.request_redraw();
         }
     }
 
@@ -2905,7 +2911,7 @@ pub struct LocalState {
     hover_bounds: Option<Rectangle>,
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum Item {
     NextButton,
     #[default]
