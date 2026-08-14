@@ -1,6 +1,6 @@
 [submodule "iced"]
 	path = iced
-	url = https://github.com/Lcstyle/iced.git
+	url = https://github.com/Lcstyle/iced
 	branch = unified-1.4.0
 [submodule "icon-theme"]
 	path = cosmic-icons
